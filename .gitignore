@@ -1,0 +1,15 @@
+node_modules/
+frontend/node_modules/
+backend/node_modules/
+frontend/dist/
+backend/.env
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/speech-cache/*
+!backend/speech-cache/.gitkeep
+frontend/.env
+*.log
+.DS_Store
+.agents/
+to do.txt
+.vercel/
