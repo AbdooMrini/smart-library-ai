@@ -14,7 +14,6 @@ export default function Ranking() {
   useEffect(() => { api.get("/rank/weekly").then((response) => setUsers(response.data)).catch(() => setUsers([])); }, []);
   return <section className="container-page py-14">
     <h1 className="display mt-3 text-5xl sm:text-7xl">{t("weeklyRanking")}</h1>
-    <div className="mt-6 max-w-2xl rounded-2xl border bg-white p-5 text-sm leading-6 text-neutral-600">{t("howWorks")}</div>
     {!users ? <Loader /> : users.length === 0 ? <div className="mt-10"><State title="Classement vide" text="Répondez à un QCM pour gagner les premiers points." /></div> :
       <div className="mx-auto mt-10 max-w-3xl space-y-3">{users.map((reader, index) => {
         const isMe = user?.id === reader.id;

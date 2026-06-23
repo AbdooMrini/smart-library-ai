@@ -20,6 +20,17 @@ export async function migrateDatabase() {
     await pool.query("ALTER TABLE ratings ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
   }
   await pool.query(
+    `CREATE TABLE IF NOT EXISTS comment_likes (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      comment_id INT UNSIGNED NOT NULL,
+      user_id INT UNSIGNED NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_comment_like (comment_id, user_id),
+      FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )`,
+  );
+  await pool.query(
     `CREATE TABLE IF NOT EXISTS weekly_rank_history (
       id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
       user_id INT UNSIGNED NOT NULL,

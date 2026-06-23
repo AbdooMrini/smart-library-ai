@@ -46,6 +46,89 @@ app.use(express.json({ limit: "1mb" }));
 app.use("/uploads", express.static(uploadsDir));
 app.use("/speech-audio", express.static(speechCacheDir, { maxAge: "30d", immutable: true }));
 
+app.get("/", (_req, res) => {
+  res.type("html").send(`<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Smart Library AI API</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #09090b;
+        background: radial-gradient(circle at top, #f4f4f5 0, #fff 42%, #f5f5f4 100%);
+      }
+      main {
+        width: min(720px, calc(100% - 40px));
+        padding: 44px;
+        border: 1px solid #e4e4e7;
+        border-radius: 30px;
+        background: rgba(255, 255, 255, 0.86);
+        box-shadow: 0 30px 90px rgba(0, 0, 0, 0.08);
+      }
+      .badge {
+        display: inline-flex;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: #09090b;
+        color: #fff;
+        font-size: 13px;
+        font-weight: 800;
+      }
+      h1 {
+        margin: 22px 0 10px;
+        font-size: clamp(34px, 7vw, 64px);
+        line-height: 0.95;
+        letter-spacing: -0.06em;
+      }
+      p {
+        color: #666;
+        font-size: 17px;
+        line-height: 1.65;
+      }
+      a {
+        color: #09090b;
+        font-weight: 800;
+      }
+      code {
+        display: inline-block;
+        padding: 5px 8px;
+        border-radius: 9px;
+        background: #f4f4f5;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <span class="badge">API en ligne</span>
+      <h1>Smart Library AI</h1>
+      <p>
+        Le backend fonctionne sur ce port. Pour utiliser le site web, ouvrez
+        <a href="${env.frontendUrl}">${env.frontendUrl}</a>.
+      </p>
+      <p>
+        Test API : <a href="/api/health"><code>/api/health</code></a>
+        ou <a href="/api/books?limit=1"><code>/api/books?limit=1</code></a>.
+      </p>
+    </main>
+  </body>
+</html>`);
+});
+
+app.get("/api", (_req, res) => {
+  res.json({
+    service: "Smart Library AI API",
+    status: "ok",
+    frontend: env.frontendUrl,
+    health: "/api/health",
+  });
+});
+
 const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const sign = (user) => jwt.sign({ id: user.id, role: user.role }, env.jwtSecret, { expiresIn: "7d" });
 const publicUser = ({ password, ...user }) => user;
@@ -756,10 +839,14 @@ app.delete("/api/favorites/:bookId", auth, asyncRoute(async (req, res) => {
   res.json({ message: "Retiré des favoris." });
 }));
 
-app.get("/api/books/:bookId/comments", asyncRoute(async (req, res) => {
+app.get("/api/books/:bookId/comments", optionalAuth, asyncRoute(async (req, res) => {
   const [rows] = await pool.query(
-    "SELECT c.*, u.name user_name, u.avatar_url user_avatar FROM comments c JOIN users u ON u.id=c.user_id WHERE c.book_id=? ORDER BY c.created_at DESC",
-    [req.params.bookId],
+    `SELECT c.*, u.name user_name, u.avatar_url user_avatar,
+     (SELECT COUNT(*) FROM comment_likes cl WHERE cl.comment_id=c.id) like_count,
+     EXISTS(SELECT 1 FROM comment_likes mine WHERE mine.comment_id=c.id AND mine.user_id=?) is_liked
+     FROM comments c JOIN users u ON u.id=c.user_id
+     WHERE c.book_id=? ORDER BY like_count DESC, c.created_at DESC`,
+    [req.user?.id || 0, req.params.bookId],
   );
   res.json(rows);
 }));
@@ -774,6 +861,18 @@ app.delete("/api/comments/:id", auth, asyncRoute(async (req, res) => {
   if (rows[0].user_id !== req.user.id && req.user.role !== "admin") return res.status(403).json({ message: "Action interdite." });
   await pool.query("DELETE FROM comments WHERE id=?", [req.params.id]);
   res.json({ message: "Commentaire supprimé." });
+}));
+app.post("/api/comments/:id/like", auth, asyncRoute(async (req, res) => {
+  const [comments] = await pool.query("SELECT id FROM comments WHERE id=?", [req.params.id]);
+  if (!comments[0]) return res.status(404).json({ message: "Commentaire introuvable." });
+  await pool.query("INSERT IGNORE INTO comment_likes (comment_id,user_id) VALUES (?,?)", [req.params.id, req.user.id]);
+  const [rows] = await pool.query("SELECT COUNT(*) count FROM comment_likes WHERE comment_id=?", [req.params.id]);
+  res.json({ liked: true, count: rows[0].count });
+}));
+app.delete("/api/comments/:id/like", auth, asyncRoute(async (req, res) => {
+  await pool.query("DELETE FROM comment_likes WHERE comment_id=? AND user_id=?", [req.params.id, req.user.id]);
+  const [rows] = await pool.query("SELECT COUNT(*) count FROM comment_likes WHERE comment_id=?", [req.params.id]);
+  res.json({ liked: false, count: rows[0].count });
 }));
 
 app.post("/api/comments/:id/translate", auth, asyncRoute(async (req, res) => {
@@ -1279,12 +1378,57 @@ app.delete("/api/admin/users/:id", auth, admin, asyncRoute(async (req, res) => {
   res.json({ message: "Utilisateur supprimé." });
 }));
 app.get("/api/admin/comments", auth, admin, asyncRoute(async (_req, res) => {
-  const [rows] = await pool.query("SELECT c.*, u.name user_name, b.title book_title FROM comments c JOIN users u ON u.id=c.user_id JOIN books b ON b.id=c.book_id ORDER BY c.created_at DESC");
+  const [rows] = await pool.query(
+    `SELECT c.*, u.name user_name, u.avatar_url user_avatar, b.title book_title
+     FROM comments c
+     JOIN users u ON u.id=c.user_id
+     JOIN books b ON b.id=c.book_id
+     ORDER BY c.created_at DESC`,
+  );
   res.json(rows);
 }));
 app.get("/api/admin/ratings", auth, admin, asyncRoute(async (_req, res) => {
   const [rows] = await pool.query("SELECT r.id, r.value, r.created_at, u.id user_id, u.name user_name, u.avatar_url user_avatar, b.id book_id, b.title book_title FROM ratings r JOIN users u ON u.id=r.user_id JOIN books b ON b.id=r.book_id ORDER BY r.id DESC");
   res.json(rows);
+}));
+app.get("/api/admin/books/:id/community", auth, admin, asyncRoute(async (req, res) => {
+  const [books] = await pool.query("SELECT id, title FROM books WHERE id=?", [req.params.id]);
+  if (!books[0]) return res.status(404).json({ message: "Livre introuvable." });
+  const [ratings] = await pool.query(
+    `SELECT r.id, r.value, r.created_at, u.id user_id, u.name user_name, u.email user_email, u.avatar_url user_avatar
+     FROM ratings r JOIN users u ON u.id=r.user_id
+     WHERE r.book_id=? ORDER BY r.value DESC, r.created_at DESC`,
+    [req.params.id],
+  );
+  const [comments] = await pool.query(
+    `SELECT c.id, c.text, c.created_at, u.id user_id, u.name user_name, u.email user_email, u.avatar_url user_avatar,
+     (SELECT COUNT(*) FROM comment_likes cl WHERE cl.comment_id=c.id) like_count
+     FROM comments c JOIN users u ON u.id=c.user_id
+     WHERE c.book_id=? ORDER BY like_count DESC, c.created_at DESC`,
+    [req.params.id],
+  );
+  const [summaries] = await pool.query(
+    `SELECT ps.id, ps.text, ps.language, ps.view_count, ps.created_at, ps.updated_at,
+     u.id user_id, u.name user_name, u.email user_email, u.avatar_url user_avatar,
+     (SELECT COUNT(*) FROM public_summary_likes psl WHERE psl.summary_id=ps.id) like_count,
+     (SELECT COUNT(*) FROM public_summary_comments psc WHERE psc.summary_id=ps.id) comment_count
+     FROM public_summaries ps JOIN users u ON u.id=ps.user_id
+     WHERE ps.book_id=?
+     ORDER BY like_count DESC, ps.view_count DESC, comment_count DESC, ps.created_at DESC`,
+    [req.params.id],
+  );
+  res.json({
+    book: books[0],
+    ratings,
+    comments,
+    summaries,
+    stats: {
+      average_rating: ratings.length ? ratings.reduce((sum, item) => sum + Number(item.value), 0) / ratings.length : 0,
+      rating_count: ratings.length,
+      comment_count: comments.length,
+      summary_count: summaries.length,
+    },
+  });
 }));
 
 app.use((error, _req, res, _next) => {

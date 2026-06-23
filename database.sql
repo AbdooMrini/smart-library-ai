@@ -4,7 +4,7 @@ USE smart_library_ai;
 SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS conversation_bans, user_blocks, report_messages, support_messages,
   messages, conversation_members, conversations, notifications, reports, support_tickets,
-  public_summary_comments, public_summary_likes, public_summaries, profile_views, user_likes,
+  public_summary_comments, public_summary_likes, public_summaries, comment_likes, profile_views, user_likes,
   weekly_rank_history, quiz_results, quizzes, summaries, ratings, comments, favorites, wishes,
   book_categories, book_authors, categories, authors, books, users;
 SET FOREIGN_KEY_CHECKS = 1;
@@ -81,6 +81,15 @@ CREATE TABLE comments (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+);
+CREATE TABLE comment_likes (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  comment_id INT UNSIGNED NOT NULL,
+  user_id INT UNSIGNED NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_comment_like (comment_id, user_id),
+  FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 CREATE TABLE ratings (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
