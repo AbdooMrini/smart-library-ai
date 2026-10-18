@@ -45,7 +45,7 @@ MISTRAL_API_KEY=your_key_here
 MISTRAL_MODEL=mistral-small-latest
 ELEVENLABS_API_KEY=your_new_elevenlabs_key_here
 ELEVENLABS_MODEL=eleven_multilingual_v2
-ELEVENLABS_VOICE_ID=JBFqnCBsd6RMkjVDRZzb
+ELEVENLABS_VOICE_ID=your_key_here
 ELEVENLABS_TIMEOUT=120000
 ```
 
